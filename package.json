@@ -2,12 +2,12 @@
   "name": "nedo",
   "version": "1.0.0",
   "description": "Create a snapshot of Interlay measures, e.g. vault collateral",
-  "main": "snapshot-interlay.ts",
+  "main": "snapshot-interlay.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@interlay/interbtc": "../interbtc-api",
+    "@interlay/interbtc": "../interbtc-api/",
     "@interlay/esplora-btc-api": "1.3.0",
     "@interlay/monetary-js": "0.7.3",
     "@polkadot/api": "10.9.1",
