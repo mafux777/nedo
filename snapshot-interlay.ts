@@ -22,6 +22,11 @@ const args = yargs(hideBin(process.argv))
         type: "string",
         demandOption: true,
     })
+    .option("start-date", { // Adding the start-date option
+        description: "The start date in YYYY-MM-DD format",
+        type: "string",
+        demandOption: true, // Making it required
+    })
     .argv;
 
 main().catch((err) => {
@@ -65,7 +70,7 @@ async function fetchSnapshotData(chainId: number, logDT: string, startHR: number
 
 
 async function main(): Promise<void> {
-    const startDate = new Date("2023-11-29");
+    const startDate = new Date(args["start-date"]);
     const endDate = new Date(new Date().setDate(new Date().getDate() - 1)); // Yesterday
 
     await cryptoWaitReady();
