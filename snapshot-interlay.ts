@@ -143,7 +143,7 @@ async function main(): Promise<void> {
                 source: source,
                 address_pubkey: u8aToHex(decodeAddress(my_vault_from_registry.id.accountId)),
                 address_ss58: my_vault_from_registry.id.accountId.toString(),
-                kv: JSON.stringify(my_vault_from_registry.id.toJSON()),
+                kv: my_vault_from_registry.id.toJSON(),
                 pv: {
                     collateral: ma_human,
                     collateral_currency: ma_ticker,
