@@ -6,7 +6,7 @@ import {createInterBtcApi,
     LendToken,
     newMonetaryAmount,
     UndercollateralizedPosition
-} from "@interlay/interbtc";
+} from "@interlay/interbtc-api";
 import { u8aToHex } from '@polkadot/util';
 import fetch from "node-fetch";
 import {ApiPromise} from "@polkadot/api";

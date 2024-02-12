@@ -2,11 +2,6 @@
 
 Use this script to take a snapshot of Interlay vault collaterals. 
 
-For now, you need to separately clone this repo:
-
-```bash
-git clone https://github.com/interlay/interbtc-api
-```
 
 Clone this repository and enter into the root folder.
 
