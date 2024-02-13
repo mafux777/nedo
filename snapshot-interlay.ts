@@ -104,6 +104,11 @@ function parseDateAndHour(dateStr: string) {
     return { date, hour };
 }
 
+interface JSONableCodec {
+  toJSON(): any;
+}
+
+
 async function main(): Promise<void> {
     // Parse start date and optionally extract hour
     const { date: startDate, hour: startHour } = parseDateAndHour(args["start-date"]);
@@ -134,7 +139,7 @@ async function main(): Promise<void> {
 
     // Loop through all relevant dates
     for (let d = startDate; d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dataMapping: string[] = [];
+        // const dataMapping: string[] = [];
         const dateString = d.toISOString().split("T")[0].replace(/-/g, "");
         const data = await fetchSnapshotData(2032, dateString, 0, 23);
         const last_hour = 23;
@@ -153,69 +158,50 @@ async function main(): Promise<void> {
         const blockTimestampISO = new Date(blockDate.toNumber()).toISOString();
         console.log(`Block date (ISO format): ${blockTimestampISO}`);
 
-        const entries = await temp_api.query.vaultRegistry.vaults.entries();
+        const vaultEntries = await temp_api.query.vaultRegistry.vaults.entries();
+        // Assuming vaultEntries is an array of tuples, where each tuple consists of [StorageKey, Option<SomeType>]
+        const filteredVaultEntries = vaultEntries.filter(([key,
+                                                              optionValue]) => optionValue.isSome);
         const collateralPositions = await temp_api.query.vaultStaking.totalCurrentStake.entries();
 
         // Transform entries to a more usable form, extracting keys
-        const transformEntries = (entries: [any, any][]) =>
+        const transformVaultEntries = (entries: [any, any][]) =>
           entries.map(([key, value]) => {
             // Assuming the keys are for a map that takes an accountId
-            const decodedKey = key.args.map((k: { toString: () => any; }) => k.toString());
+            const decodedKey = key.args.map((k: JSONableCodec) => k.toJSON());
             return { key: decodedKey, value };
           });        // Transform entries to extract keys and nonce for entriesB
-        const transformEntriesWithNonce = (entries: [any, any][]) =>
+        const CollateralWithNonce = (entries: [any, any][]) =>
           entries.map(([key, value]) => {
             // Assuming the first part of the key is the accountId, and the second part is the nonce
-            const [nonce, accountId] = key.args.map((k: { toString: () => any; }) => k.toString());
+            const [nonce, accountId] = key.args.map((k: JSONableCodec) => k.toJSON());
             return { key: accountId, nonce, value };
           });
 
-        const transformedA = transformEntries(entries);
-        const transformedB = transformEntriesWithNonce(collateralPositions);
+        const vaultArray = transformVaultEntries(filteredVaultEntries);
+        const collateralArray = CollateralWithNonce(collateralPositions);
 
         // Join data based on the accountId, taking nonce into account for entriesB
-        const joinedData = transformedA.map((itemA) => {
-          const matchingItemB = transformedB.find((itemB) => itemA.key.toString() === itemB.key.toString());
-          return {
-            key: itemA.key,
-            valueA: itemA.value,
-            valueB: matchingItemB ? matchingItemB.value : undefined,
-            nonce: matchingItemB ? matchingItemB.nonce : undefined, // Include the nonce in the joined data
-          };
-        });
+        const vaultWithCollateral = (vaultArray.map( (vault) => {
+            const matchingCollateral = (collateralArray.find((collateralPosition) =>
+                  vault.key.toString() === collateralPosition.key.toString()));
+            if(!vault.value.isSome){
+                console.log(`${vault.key} seems to be undefined`)
+            }
 
-        console.log(joinedData);
+            const track_value = JSON.stringify(vault.key[0].currencies.collateral);
 
-        for (let i = 0; i < entries.length; i++) {
-            const [, vaultData] = entries[i]; // Destructure to get the vaultData
-            if(!vaultData.isSome) continue;
-            //if(!vaultData) continue; // it looks like TS does not otherwise understand the previous line
+            const nonce = matchingCollateral ? matchingCollateral.nonce : undefined;
+            const rawBackingCollateral = matchingCollateral ? matchingCollateral.value.toJSON() : undefined;
+            if(!rawBackingCollateral || !nonce){
+                console.log(`It would appear that ${vault.key.toString()} does not have collateral.`)
+            }
 
-            // Convert all the codecs to JSON to make life easier
-            const my_vault_from_registry = vaultData.value;
-            const collateral_currency = await currencyIdToMonetaryCurrency(interBtc.api,
-                my_vault_from_registry.id.currencies.collateral);
-            const track_value = JSON.stringify(my_vault_from_registry.id.currencies.collateral.toJSON());
-
-            // const vaultId = newVaultId(interBtc.api, my_vault_from_registry.id.accountId.toString(),
-            //      collateral_currency,
-            //      InterBtc);
-            // const rawNonce = await interBtc.api.query.vaultStaking.nonce(vaultId);
-            // const nonce = rawNonce.toNumber(); // IT LOOKS LIKE THIS IS ALWAYS 0
-            const nonce = 0; // IT LOOKS LIKE THIS IS ALWAYS 0
-
-            const rawBackingCollateral = await temp_api.query.vaultStaking.totalCurrentStake(nonce,
-                my_vault_from_registry.id);
-            const ma = newMonetaryAmount(decodeFixedPointType(rawBackingCollateral),
-                collateral_currency);
-            const ma_human = ma.toHuman();
-            const ma_ticker = ma.currency.ticker;
-            // print the amount
-
-            console.log(`${my_vault_from_registry.id.accountId.toString()}, Backing Collateral: ${ma_human} ${ma_ticker} Nonce ${nonce}`);
-
-            // Construct the final payload
-            const my_vault = {
+            return {
+                //key: itemA.key,
+                //valueA: vault.value,
+                //valueB: matchingCollateral ? matchingCollateral.value : undefined,
+                // ---
                 chain_name: chain_name,
                 block_hash: my_blockhash,
                 block_number: my_blockno,
@@ -225,21 +211,42 @@ async function main(): Promise<void> {
                 track: track,
                 track_val: track_value,
                 source: source,
-                address_pubkey: u8aToHex(decodeAddress(my_vault_from_registry.id.accountId)),
-                address_ss58: my_vault_from_registry.id.accountId.toString(),
-                kv: my_vault_from_registry.id.toJSON(),
+                address_pubkey: u8aToHex(decodeAddress(vault.key[0].accountId)),
+                address_ss58: vault.key[0].accountId.toString(),
+                kv: vault.key[0],
                 pv: {
-                    collateral: ma_human,
-                    collateral_currency: ma_ticker,
-                    raw_collateral: rawBackingCollateral,
-                    ...my_vault_from_registry.toJSON()
+                    // collateral: ma_human,
+                    // collateral_currency: ma_ticker,
+                    nonce: nonce, // Include the nonce in the joined data
+                    raw_collateral: matchingCollateral ? matchingCollateral.value : undefined,
+                    raw_collateral_j: matchingCollateral ? matchingCollateral.value.toJSON() : undefined,
+                    raw_collateral_s: matchingCollateral ? matchingCollateral.value.toString() : undefined,
+                    raw_collateral_h: matchingCollateral ? matchingCollateral.value.toHuman() : undefined,
+                    raw_collateral_b: matchingCollateral ? matchingCollateral.value.toBn() : undefined,
+                    ...vault.value.toJSON()
                 }
-            };
+          };
+        }));
 
-            dataMapping.push(JSON.stringify(my_vault)); // Store the date and the array of vault JSON objects in dataMapping
-        }
+        console.log(vaultWithCollateral);
 
-        console.log(`Date: ${dateString}, Vault count: ${entries.length}`);
+            // const collateral_currency = await currencyIdToMonetaryCurrency(interBtc.api,
+            //     my_vault_from_registry.id.currencies.collateral);
+            // const track_value = JSON.stringify(my_vault_from_registry.id.currencies.collateral.toJSON());
+
+
+        //     const rawBackingCollateral = await temp_api.query.vaultStaking.totalCurrentStake(nonce,
+        //         my_vault_from_registry.id);
+        //     const ma = newMonetaryAmount(decodeFixedPointType(rawBackingCollateral),
+        //         collateral_currency);
+        //     const ma_human = ma.toHuman();
+        //     const ma_ticker = ma.currency.ticker;
+        //     // print the amount
+        //
+        //     console.log(`${my_vault_from_registry.id.accountId.toString()}, Backing Collateral: ${ma_human} ${ma_ticker} Nonce ${nonce}`);
+        //
+
+        console.log(`Date: ${dateString}, Vault count: ${vaultEntries.length}`);
         // JSON Writing
         const relayChain = "polkadot";
         const paraID = "interlay";
@@ -259,7 +266,11 @@ async function main(): Promise<void> {
         // Construct the full file path
         const filePath = path.join(dirPath, `${relayChain}_snapshots${paraID}_${logYYYYMMDD}_23.json`);
 
-        fs.writeFileSync(filePath, dataMapping.join("\n")); // one line per item
+        // Transform the array of objects into an array of JSON strings
+        const vaultsWithCollateralAsJsonStrings: string[] = vaultWithCollateral.map(vault => JSON.stringify(vault));
+
+        // Now, vaultsWithCollateralAsJsonStrings is an array of strings, where each string is a JSON representation of the corresponding object in vaultWithCollateral
+        fs.writeFileSync(filePath, vaultsWithCollateralAsJsonStrings.join("\n")); // one line per item
         console.log("Data written to JSON successfully.");
     }
 
