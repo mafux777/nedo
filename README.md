@@ -15,7 +15,7 @@ Compile typescript with `tsc`
 
 Run the script with 
 
-`node ./snapshot-interlay.js --start-date 2023-10-01 --parachain-endpoint wss://api.interlay.io:443/parachain`
+`node ./snapshot-interlay.js --out <some_dir> --start-date 2023-10-01 --parachain-endpoint wss://api.interlay.io:443/parachain`
 
 The output will look like this:
 

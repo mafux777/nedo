@@ -23,9 +23,19 @@ const args = yargs(hideBin(process.argv))
         demandOption: true,
     })
     .option("start-date", { // Adding the start-date option
-        description: "The start date in YYYY-MM-DD format",
+        description: "The start date in YYYY-MM-DD [h] format (hour optional)",
         type: "string",
         demandOption: true, // Making it required
+    })
+    .option("end-date", { // Adding the start-date option
+        description: "The end date in YYYY-MM-DD [h] format (hour optional)",
+        type: "string",
+        demandOption: false, // Making it optional
+    })
+    .option("out", { // Adding the start-date option
+        description: "The output directory (will be created if needed)",
+        type: "string",
+        demandOption: false, // Making it optional
     })
     .argv;
 
@@ -67,12 +77,36 @@ async function fetchSnapshotData(chainId: number, logDT: string, startHR: number
     return j;
 }
 
+function parseDateAndHour(dateStr: string) {
+    let date = new Date(dateStr);
+    let hour = null;
+
+    // Check if the input string contains an hour part
+    if (dateStr.includes(' ')) {
+        const parts = dateStr.split(' ');
+        date = new Date(parts[0]); // Update date to exclude time part
+        hour = parseInt(parts[1], 10); // Extract hour as integer
+    }
+
+    return { date, hour };
+}
 
 
 async function main(): Promise<void> {
-    const startDate = new Date(args["start-date"]);
-    const endDate = new Date(new Date().setDate(new Date().getDate() - 1)); // Yesterday
+    // Parse start date and optionally extract hour
+    const { date: startDate, hour: startHour } = parseDateAndHour(args["start-date"]);
 
+    let endDate;
+    let endHour = null;
+
+    if (args["end-date"]) {
+        // If end date is provided, parse it in the same way as the start date
+        const parsedEndDate = parseDateAndHour(args["end-date"]);
+        endDate = parsedEndDate.date;
+        endHour = parsedEndDate.hour;
+    } else {
+        endDate = new Date(); // today!
+    }
     await cryptoWaitReady();
     console.log(`Connecting to parachain using ${args["parachain-endpoint"]}`);
     const interBtc = await createInterBtcApi(args["parachain-endpoint"]);
@@ -90,7 +124,15 @@ async function main(): Promise<void> {
         const dateString = d.toISOString().split("T")[0].replace(/-/g, "");
         const data = await fetchSnapshotData(2032, dateString, 0, 23);
         const last_hour = 23;
+        if (data.length<last_hour){
+            console.log(`We have reached the end of the road...`);
+            break;
+        }
         const my_blockhash = data[last_hour].end_blockhash; // last hour of the day
+        if(!my_blockhash){
+            console.log(`We have reached the end of the road...`);
+            break;
+        }
         const my_blockno = data[last_hour].endBN; // last block of that hour
         const chain_name = "Interlay";
         const ts = data[last_hour].endTS; // timestamp in Linux notation
@@ -172,7 +214,7 @@ async function main(): Promise<void> {
         const day = String(d.getDate()).padStart(2, "0");
 
         // Construct the directory path dynamically
-        const dirPath = `./${relayChain}/${paraNo}/${year}/${month}/${day}/`;
+        const dirPath = `./${args["out"]}/${relayChain}/${paraNo}/${year}/${month}/${day}/`;
 
         // Ensure the directory exists
         fs.mkdirSync(dirPath, {recursive: true});
@@ -186,59 +228,3 @@ async function main(): Promise<void> {
 
     await interBtc.disconnect();
 }
-
-
-
-/*
-    // try out polkaholic API
-    const data = await fetchSnapshotData(2032, "20240101", 0, 23);
-    console.log(data);
-    const my_blockhash = data[0].end_blockhash;
-
-    await cryptoWaitReady();
-
-    console.log(`Connecting to parachain using ${args["parachain-endpoint"]} at ${my_blockhash}`);
-    const interBtc = await createInterBtcApi(args["parachain-endpoint"], undefined, my_blockhash);
-    //const interBtc2 = await interBtc.api.at(my_blockhash);
-
-    // get all vault collateral positions
-    const vault_list = await interBtc.vaults.list();
-    //const vault_list = (await interBtc2.query.vaults.list()) as VaultExt[];
-    console.table(vault_list);
-
-    //
-    const bannedVaults = vault_list.filter(vault => vault.bannedUntil);
-    bannedVaults.forEach(vault => {
-      console.log(`Vault Name: ${vault.id}, Banned Until: ${vault.bannedUntil}`);
-    });
-
-    // get the account ID corresponding to "wdBcednk8i9t7xYjkWM9rTtrix1V4oWBRkEhkF89xvS2tu5iY"
-    const accountId = interBtc.api.createType(
-        "AccountId",
-        "wdBcednk8i9t7xYjkWM9rTtrix1V4oWBRkEhkF89xvS2tu5iY"
-    );
-
-    const fa_1 = await interBtc.assetRegistry.getForeignAsset(3);
-    const api = interBtc.api;
-
-    const latestHeader = await api.rpc.chain.getHeader();
-
-    const fa_2 = await getForeignAssetFromId(api, 3);
-    console.log(fa_2);
-
-    // check currency metadata
-    const foreignAssets = await interBtc.assetRegistry.getForeignAssets();
-    // Constructing an object of ForeignAsset type with minimal attributes using type assertion
-    const vault_collateral = await interBtc.vaults.get(accountId, fa_1);
-    const flattenedData = foreignAssets.map(item => ({
-        id: item.foreignAsset.id,
-        coingeckoId: item.foreignAsset.coingeckoId,
-        name: item.name,
-        ticker: item.ticker,
-        decimals: item.decimals
-    }));
-
-    // get Loan Assets from the API
-    const loan_assets = await interBtc.loans.getLoanAssets();
-*/
-
