@@ -29,9 +29,19 @@ const args = yargs(hideBin(process.argv))
     demandOption: true,
 })
     .option("start-date", {
-    description: "The start date in YYYY-MM-DD format",
+    description: "The start date in YYYY-MM-DD [h] format (hour optional)",
     type: "string",
     demandOption: true, // Making it required
+})
+    .option("end-date", {
+    description: "The end date in YYYY-MM-DD [h] format (hour optional)",
+    type: "string",
+    demandOption: false, // Making it optional
+})
+    .option("out", {
+    description: "The output directory (will be created if needed)",
+    type: "string",
+    demandOption: false, // Making it optional
 })
     .argv;
 main().catch((err) => {
@@ -57,10 +67,35 @@ function fetchSnapshotData(chainId, logDT, startHR, finalHR) {
         return j;
     });
 }
+// Function to parse date and optionally extract hour
+function parseDateAndHour(dateStr) {
+    let date = new Date(dateStr);
+    let hour = null;
+    // Check if the input string contains an hour part
+    if (dateStr.includes(' ')) {
+        const parts = dateStr.split(' ');
+        date = new Date(parts[0]); // Update date to exclude time part
+        hour = parseInt(parts[1], 10); // Extract hour as integer
+    }
+    return { date, hour };
+}
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
-        const startDate = new Date(args["start-date"]);
-        const endDate = new Date(new Date().setDate(new Date().getDate() - 1)); // Yesterday
+        // Parse start date and optionally extract hour
+        const { date: startDate, hour: startHour } = parseDateAndHour(args["start-date"]);
+        let endDate;
+        let endHour = null;
+        if (args["end-date"]) {
+            // If end date is provided, parse it in the same way as the start date
+            const parsedEndDate = parseDateAndHour(args["end-date"]);
+            endDate = parsedEndDate.date;
+            endHour = parsedEndDate.hour;
+        }
+        else {
+            // Simplified approach to set endDate to yesterday
+            endDate = new Date();
+            endDate.setDate(endDate.getDate() - 1);
+        }
         yield (0, util_crypto_1.cryptoWaitReady)();
         console.log(`Connecting to parachain using ${args["parachain-endpoint"]}`);
         const interBtc = yield (0, interbtc_api_1.createInterBtcApi)(args["parachain-endpoint"]);
@@ -90,6 +125,31 @@ function main() {
             const blockTimestampISO = new Date(blockDate.toNumber()).toISOString();
             console.log(`Block date (ISO format): ${blockTimestampISO}`);
             const entries = yield temp_api.query.vaultRegistry.vaults.entries();
+            const collateralPositions = yield temp_api.query.vaultStaking.totalCurrentStake.entries();
+            // Transform entries to a more usable form, extracting keys
+            const transformEntries = (entries) => entries.map(([key, value]) => {
+                // Assuming the keys are for a map that takes an accountId
+                const decodedKey = key.args.map((k) => k.toString());
+                return { key: decodedKey, value };
+            }); // Transform entries to extract keys and nonce for entriesB
+            const transformEntriesWithNonce = (entries) => entries.map(([key, value]) => {
+                // Assuming the first part of the key is the accountId, and the second part is the nonce
+                const [nonce, accountId] = key.args.map((k) => k.toString());
+                return { key: accountId, nonce, value };
+            });
+            const transformedA = transformEntries(entries);
+            const transformedB = transformEntriesWithNonce(collateralPositions);
+            // Join data based on the accountId, taking nonce into account for entriesB
+            const joinedData = transformedA.map((itemA) => {
+                const matchingItemB = transformedB.find((itemB) => itemA.key.toString() === itemB.key.toString());
+                return {
+                    key: itemA.key,
+                    valueA: itemA.value,
+                    valueB: matchingItemB ? matchingItemB.value : undefined,
+                    nonce: matchingItemB ? matchingItemB.nonce : undefined, // Include the nonce in the joined data
+                };
+            });
+            console.log(joinedData);
             for (let i = 0; i < entries.length; i++) {
                 const [, vaultData] = entries[i]; // Destructure to get the vaultData
                 if (!vaultData.isSome)
