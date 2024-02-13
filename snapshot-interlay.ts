@@ -246,8 +246,8 @@ async function main(): Promise<void> {
             console.log(`Date: ${dateString}, Vault count: ${entries.length}`);
             // JSON Writing
             const relayChain = "polkadot";
-            const paraID = "interlay";
-            const paraNo = 2032;
+            const paraName = "interlay";
+            const paraID = 2032;
             const logYYYYMMDD = `log${dateString}`;
 
             const year = d.getFullYear();
@@ -255,7 +255,7 @@ async function main(): Promise<void> {
             const day = String(d.getDate()).padStart(2, "0");
 
             // Construct the directory path dynamically
-            const dirPath = `${args["out"]}/${relayChain}/${paraNo}/${year}/${month}/${day}/`;
+            const dirPath = `${args["out"]}/${relayChain}/${paraID}/${year}/${month}/${day}/`;
 
             // Ensure the directory exists
             fs.mkdirSync(dirPath, {recursive: true});
