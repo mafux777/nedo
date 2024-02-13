@@ -248,7 +248,7 @@ async function main(): Promise<void> {
             const relayChain = "polkadot";
             const paraName = "interlay";
             const paraID = 2032;
-            const logYYYYMMDD = `log${dateString}`;
+            const logYYYYMMDD = `${dateString}`;
 
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, "0"); // JavaScript months are 0-indexed.
@@ -261,7 +261,7 @@ async function main(): Promise<void> {
             fs.mkdirSync(dirPath, {recursive: true});
 
             // Construct the full file path
-            const filePath = path.join(dirPath, `${relayChain}_snapshots${paraID}_${logYYYYMMDD}_${targetHR}.json`);
+            const filePath = path.join(dirPath, `${relayChain}_snapshots_${paraID}_${logYYYYMMDD}_${targetHR}.json`);
 
             fs.writeFileSync(filePath, dataMapping.join("\n")); // one line per item
             console.log(`Data written to ${filePath} JSON successfully`);

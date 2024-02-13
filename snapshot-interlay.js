@@ -206,18 +206,18 @@ function main() {
                 console.log(`Date: ${dateString}, Vault count: ${entries.length}`);
                 // JSON Writing
                 const relayChain = "polkadot";
-                const paraID = "interlay";
-                const paraNo = 2032;
-                const logYYYYMMDD = `log${dateString}`;
+                const paraName = "interlay";
+                const paraID = 2032;
+                const logYYYYMMDD = `${dateString}`;
                 const year = d.getFullYear();
                 const month = String(d.getMonth() + 1).padStart(2, "0"); // JavaScript months are 0-indexed.
                 const day = String(d.getDate()).padStart(2, "0");
                 // Construct the directory path dynamically
-                const dirPath = `${args["out"]}/${relayChain}/${paraNo}/${year}/${month}/${day}/`;
+                const dirPath = `${args["out"]}/${relayChain}/${paraID}/${year}/${month}/${day}/`;
                 // Ensure the directory exists
                 fs.mkdirSync(dirPath, { recursive: true });
                 // Construct the full file path
-                const filePath = path.join(dirPath, `${relayChain}_snapshots${paraID}_${logYYYYMMDD}_${targetHR}.json`);
+                const filePath = path.join(dirPath, `${relayChain}_snapshots_${paraID}_${logYYYYMMDD}_${targetHR}.json`);
                 fs.writeFileSync(filePath, dataMapping.join("\n")); // one line per item
                 console.log(`Data written to ${filePath} JSON successfully`);
             }
