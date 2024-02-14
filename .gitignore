@@ -20,3 +20,4 @@ coverage
 .yarn
 local-setup
 logs.txt
+snapshot-interlay.js.map
