@@ -1,0 +1,34 @@
+id,name,symbol,decimals,type
+0,HydraDX,HDX,12,Token
+1,Lerna,LRNA,12,Token
+2,DAI (Acala Wormhole),DAI,18,Token
+3,Bitcoin (Acala Wormhole),WBTC,8,Token
+4,Ethereum (Acala Wormhole),WETH,18,Token
+5,Polkadot,DOT,10,Token
+6,ApeCoin (Acala Wormhole),APE,18,Token
+7,USD Coin (Acala Wormhole),USDC,6,Token
+8,Phala,PHA,12,Token
+9,Astar,ASTR,18,Token
+10,USDT (Polkadot Asset Hub),USDT,6,Token
+11,interBTC,iBTC,8,Token
+12,Zeitgeist,ZTG,10,Token
+13,Centrifuge,CFG,18,Token
+14,Bifrost Native Coin,BNC,12,Token
+15,Bifrost Voucher DOT,vDOT,10,Token
+16,Glimmer,GLMR,18,Token
+17,Interlay,INTR,10,Token
+18,DAI (Moonbeam Wormhole),DAI,18,Token
+19,Bitcoin (Moonbeam Wormhole),WBTC,8,Token
+20,Ethereum (Moonbeam Wormhole),WETH,18,Token
+21,USD Coin (Moonbeam Wormhole),USDC,6,Token
+22,USDC (Polkadot Asset Hub),USDC,6,Token
+23,USDT (Moonbeam Wormhole),USDT,6,Token
+24,Subsocial,SUB,10,Token
+25,Unique network,UNQ,18,Token
+26,Nodle,NODL,11,Token
+100,4-Pool,4-Pool,18,StableSwap
+101,2-Pool,2-Pool,18,StableSwap
+1000010,0x000000002e3035e8be92010000,,,Bond
+1000011,0x0500000048445418000000,,,[Record]
+1000012,0x000000004844544a420f00,,,[Record]
+1000013,0x000000002e30e71e2f94010000,,,Bond
