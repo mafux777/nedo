@@ -1,15 +1,25 @@
 import { cryptoWaitReady } from "@polkadot/util-crypto";
+import { StorageKey, u32 } from '@polkadot/types';
+import {BareOpts, Inspect} from "@polkadot/types-codec/types/codec";
 import { decodeAddress } from "@polkadot/keyring";
-import {createInterBtcApi,
+import {
+    createInterBtcApi,
     currencyIdToMonetaryCurrency,
     decodeFixedPointType,
     LendToken,
     newMonetaryAmount,
-    UndercollateralizedPosition
+    UndercollateralizedPosition,
+    VaultRegistryVault,
+    InterbtcPrimitivesVaultId
 } from "@interlay/interbtc-api";
+import { Option } from "@polkadot/types-codec"
 import { u8aToHex } from '@polkadot/util';
 import fetch from "node-fetch";
 import {ApiPromise} from "@polkadot/api";
+import type {IU8a} from "@polkadot/types-codec/types/interfaces";
+import type {Registry} from "@polkadot/types-codec/types/registry";
+import type {HexString} from "@polkadot/util/types";
+import type {AnyJson, AnyTuple} from "@polkadot/types-codec/types/helpers";
 
 const fs = require('fs');
 const Table = require("cli-table3");
@@ -39,6 +49,7 @@ const args = yargs(hideBin(process.argv))
         demandOption: false, // Making it optional
     })
     .argv;
+
 
 main().catch((err) => {
     console.log("Error thrown by script:");
@@ -98,6 +109,11 @@ function parseDateAndHour(dateStr: string): { date: Date; hour: number | null } 
 }
 
 
+interface JSONableCodec {
+  toJSON(): any;
+}
+
+
 function convertToUnixTimestamp(datePart: Date, hourPart?: number | null): number {
     // Clone the datePart to avoid mutating the original datePart
     const dateTime = new Date(datePart.getTime());
@@ -154,23 +170,22 @@ async function main(): Promise<void> {
 
     // Loop through all relevant dates
     for (let d = startDate; d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dataMapping: string[] = [];
         const dateString = d.toISOString().split("T")[0].replace(/-/g, "");
         const data = await fetchSnapshotData(2032, dateString, 0, 23);
         console.log(`[${d}] data`, data)
         const last_hour = 23;
-        for (const data_hr of data){
+        for (const data_hr of data) {
             let target_indexTS = data_hr.indexTS
             let target_hr = data_hr.hr
             let targetHR = `${target_hr.toString().padStart(2, '0')}`;
-            if (startTS <= target_indexTS && target_indexTS <= endTS){
+            if (startTS <= target_indexTS && target_indexTS <= endTS) {
                 console.log(`[${d.toISOString()} targetHR=${targetHR}] proceed!!`)
-            }else{
+            } else {
                 console.log(`[${d.toISOString()} targetHR=${targetHR}] SKIP!!`)
                 continue
             }
             const my_blockhash = data_hr.end_blockhash; // last hour of the day
-            if(!my_blockhash){
+            if (!my_blockhash) {
                 console.log(`We have reached the end of the road...`);
                 break;
             }
@@ -188,38 +203,62 @@ async function main(): Promise<void> {
             const blockTimestampISO = new Date(blockDate.toNumber()).toISOString();
             console.log(`Block date (ISO format): ${blockTimestampISO}`);
 
-            const entries = await temp_api.query.vaultRegistry.vaults.entries();
 
-            for (let i = 0; i < entries.length; i++) {
-                const [, vaultData] = entries[i]; // Destructure to get the vaultData
-                if(!vaultData.isSome) continue;
-                //if(!vaultData) continue; // it looks like TS does not otherwise understand the previous line
+            const vaultsWithCollateral: string[] = []; // this will be written to disk later
 
-                // Convert all the codecs to JSON to make life easier
-                const my_vault_from_registry = vaultData.value;
+            let filteredVaultEntries;
+            let collateralPositions;
+
+            try {
+                const vaultEntries = await temp_api.query.vaultRegistry.vaults.entries();
+                filteredVaultEntries = vaultEntries.filter(([key, optionValue]) => optionValue.isSome);
+                collateralPositions = await temp_api.query.vaultStaking.totalCurrentStake.entries();
+            } catch (error: unknown) {
+                console.error(`An error occurred when trying to get chain data from ${args["parachain-endpoint"]}:`, error);
+                process.exit(1);
+            }
+
+            // Transform entries to a more usable form, extracting keys
+            const transformVaultEntries = (entries: [any, any][]) =>
+                entries.map(([key, value]) => {
+                    // Assuming the keys are for a map that takes an accountId
+                    const decodedKey = key.args.map((k: JSONableCodec) => k.toJSON());
+                    const payload = value as unknown as Option<VaultRegistryVault>;
+                    const payloadValue = payload.value;
+
+                    return {key: decodedKey[0], payloadValue};
+                });        // Transform entries to extract keys and nonce for entriesB
+            const CollateralWithNonce = (entries: [any, any][]) =>
+                entries.map(([key, value]) => {
+                    // Assuming the first part of the key is the accountId, and the second part is the nonce
+                    const [nonce, accountId] = key.args.map((k: JSONableCodec) => k.toJSON());
+                    return {key: accountId, nonce, value};
+                });
+
+            const vaultArray = transformVaultEntries(filteredVaultEntries);
+            const vaultCache = new Map<string, VaultRegistryVault>();
+            vaultArray.forEach(vault => {
+                vaultCache.set(JSON.stringify(vault.key), vault.payloadValue);
+            });
+
+            const collateralArray = CollateralWithNonce(collateralPositions);
+
+            for (let collateralPosition of collateralArray) {
+                const vaultId = JSON.stringify(collateralPosition.key);
+                const matchingVault = vaultCache.get(vaultId); // reference data for the vault itself
+                console.log(`Found vault ${vaultId} with collateral ${collateralPosition.value}`)
+
+                const rawBackingCollateral = collateralPosition ? collateralPosition.value.toString() : undefined;
                 const collateral_currency = await currencyIdToMonetaryCurrency(interBtc.api,
-                    my_vault_from_registry.id.currencies.collateral);
-                const track_value = JSON.stringify(my_vault_from_registry.id.currencies.collateral.toJSON());
+                    matchingVault.id.currencies.collateral);
+                const track_value = JSON.stringify(matchingVault.id.currencies.collateral.toJSON());
 
-                // const vaultId = newVaultId(interBtc.api, my_vault_from_registry.id.accountId.toString(),
-                //      collateral_currency,
-                //      InterBtc);
-                // const rawNonce = await interBtc.api.query.vaultStaking.nonce(vaultId);
-                // const nonce = rawNonce.toNumber(); // IT LOOKS LIKE THIS IS ALWAYS 0
-                const nonce = 0; // IT LOOKS LIKE THIS IS ALWAYS 0
-
-                const rawBackingCollateral = await temp_api.query.vaultStaking.totalCurrentStake(nonce,
-                    my_vault_from_registry.id);
                 const ma = newMonetaryAmount(decodeFixedPointType(rawBackingCollateral),
                     collateral_currency);
                 const ma_human = ma.toHuman();
                 const ma_ticker = ma.currency.ticker;
-                // print the amount
 
-                console.log(`${my_vault_from_registry.id.accountId.toString()}, Backing Collateral: ${ma_human} ${ma_ticker} Nonce ${nonce}`);
-
-                // Construct the final payload
-                const my_vault = {
+                const finalVault = {
                     chain_name: chain_name,
                     block_hash: my_blockhash,
                     block_number: my_blockno,
@@ -229,21 +268,22 @@ async function main(): Promise<void> {
                     track: track,
                     track_val: track_value,
                     source: source,
-                    address_pubkey: u8aToHex(decodeAddress(my_vault_from_registry.id.accountId)),
-                    address_ss58: my_vault_from_registry.id.accountId.toString(),
-                    kv: my_vault_from_registry.id.toJSON(),
+                    address_pubkey: u8aToHex(decodeAddress(matchingVault.id.accountId)),
+                    address_ss58: matchingVault.id.accountId.toString(),
+                    kv: matchingVault.key,
                     pv: {
                         collateral: ma_human,
                         collateral_currency: ma_ticker,
+                        nonce: collateralPosition.nonce, // Include the nonce in the joined data
                         raw_collateral: rawBackingCollateral,
-                        ...my_vault_from_registry.toJSON()
+                        ...matchingVault.toJSON()
                     }
-                };
 
-                dataMapping.push(JSON.stringify(my_vault)); // Store the date and the array of vault JSON objects in dataMapping
+                };
+                vaultsWithCollateral.push(JSON.stringify(finalVault));
             }
 
-            console.log(`Date: ${dateString}, Vault count: ${entries.length}`);
+            console.log(`Date: ${dateString}, Vault count: ${vaultsWithCollateral.length}`);
             // JSON Writing
             const relayChain = "polkadot";
             const paraName = "interlay";
@@ -263,7 +303,7 @@ async function main(): Promise<void> {
             // Construct the full file path
             const filePath = path.join(dirPath, `${relayChain}_snapshots_${paraID}_${logYYYYMMDD}_${targetHR}.json`);
 
-            fs.writeFileSync(filePath, dataMapping.join("\n")); // one line per item
+            fs.writeFileSync(filePath, vaultsWithCollateral.join("\n")); // one line per item
             console.log(`Data written to ${filePath} JSON successfully`);
         }
     }
