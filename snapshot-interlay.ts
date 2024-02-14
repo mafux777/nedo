@@ -50,10 +50,14 @@ const args = yargs(hideBin(process.argv))
     })
     .argv;
 
+function main(){
+    return fetchAndProcess();
+}
 
 main().catch((err) => {
     console.log("Error thrown by script:");
     console.log(err);
+    process.exit(1)
 });
 
 
@@ -129,8 +133,7 @@ function convertToUnixTimestamp(datePart: Date, hourPart?: number | null): numbe
     return unixTimestampInSeconds;
 }
 
-// please consider extracting the fetch and processing into saperate function. so main can simply call it
-async function main(): Promise<void> {
+async function fetchAndProcess(): Promise<void> {
     // Parse start date and optionally extract hour
     const { date: startDate, hour: startHour } = parseDateAndHour(args["start-date"]);
 
