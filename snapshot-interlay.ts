@@ -158,6 +158,8 @@ async function main(): Promise<void> {
         const blockTimestampISO = new Date(blockDate.toNumber()).toISOString();
         console.log(`Block date (ISO format): ${blockTimestampISO}`);
 
+        const vaultsWithCollateral: string[] = [];
+
         const vaultEntries = await temp_api.query.vaultRegistry.vaults.entries();
         // Assuming vaultEntries is an array of tuples, where each tuple consists of [StorageKey, Option<SomeType>]
         const filteredVaultEntries = vaultEntries.filter(([key,
@@ -169,7 +171,10 @@ async function main(): Promise<void> {
           entries.map(([key, value]) => {
             // Assuming the keys are for a map that takes an accountId
             const decodedKey = key.args.map((k: JSONableCodec) => k.toJSON());
-            return { key: decodedKey, value };
+            const payload = value as unknown as Option<VaultRegistryVault>;
+            const payloadValue = payload.value;
+
+            return { key: decodedKey[0], payloadValue };
           });        // Transform entries to extract keys and nonce for entriesB
         const CollateralWithNonce = (entries: [any, any][]) =>
           entries.map(([key, value]) => {
@@ -179,29 +184,29 @@ async function main(): Promise<void> {
           });
 
         const vaultArray = transformVaultEntries(filteredVaultEntries);
+        const vaultCache = new Map<string, VaultRegistryVault>();
+        vaultArray.forEach(vault => {
+            vaultCache.set(JSON.stringify(vault.key), vault.payloadValue);
+        });
+
         const collateralArray = CollateralWithNonce(collateralPositions);
 
-        // Join data based on the accountId, taking nonce into account for entriesB
-        const vaultWithCollateral = (vaultArray.map( (vault) => {
-            const matchingCollateral = (collateralArray.find((collateralPosition) =>
-                  vault.key.toString() === collateralPosition.key.toString()));
-            if(!vault.value.isSome){
-                console.log(`${vault.key} seems to be undefined`)
-            }
+        for(let collateralPosition of collateralArray){
+            const vaultId = JSON.stringify(collateralPosition.key);
+            const matchingVault = vaultCache.get(vaultId); // reference data for the vault itself
+            console.log(`Found vault ${vaultId} with collateral ${collateralPosition.value}`)
 
-            const track_value = JSON.stringify(vault.key[0].currencies.collateral);
+            const rawBackingCollateral = collateralPosition ? collateralPosition.value.toString() : undefined;
+            const collateral_currency = await currencyIdToMonetaryCurrency(interBtc.api,
+                matchingVault.id.currencies.collateral);
+            const track_value = JSON.stringify(matchingVault.id.currencies.collateral.toJSON());
 
-            const nonce = matchingCollateral ? matchingCollateral.nonce : undefined;
-            const rawBackingCollateral = matchingCollateral ? matchingCollateral.value.toJSON() : undefined;
-            if(!rawBackingCollateral || !nonce){
-                console.log(`It would appear that ${vault.key.toString()} does not have collateral.`)
-            }
+            const ma = newMonetaryAmount(decodeFixedPointType(rawBackingCollateral),
+                collateral_currency);
+            const ma_human = ma.toHuman();
+            const ma_ticker = ma.currency.ticker;
 
-            return {
-                //key: itemA.key,
-                //valueA: vault.value,
-                //valueB: matchingCollateral ? matchingCollateral.value : undefined,
-                // ---
+            const finalVault = {
                 chain_name: chain_name,
                 block_hash: my_blockhash,
                 block_number: my_blockno,
@@ -211,40 +216,20 @@ async function main(): Promise<void> {
                 track: track,
                 track_val: track_value,
                 source: source,
-                address_pubkey: u8aToHex(decodeAddress(vault.key[0].accountId)),
-                address_ss58: vault.key[0].accountId.toString(),
-                kv: vault.key[0],
+                address_pubkey: u8aToHex(decodeAddress(matchingVault.id.accountId)),
+                address_ss58: matchingVault.id.accountId.toString(),
+                kv: matchingVault.key,
                 pv: {
-                    // collateral: ma_human,
-                    // collateral_currency: ma_ticker,
-                    nonce: nonce, // Include the nonce in the joined data
-                    raw_collateral: matchingCollateral ? matchingCollateral.value : undefined,
-                    raw_collateral_j: matchingCollateral ? matchingCollateral.value.toJSON() : undefined,
-                    raw_collateral_s: matchingCollateral ? matchingCollateral.value.toString() : undefined,
-                    raw_collateral_h: matchingCollateral ? matchingCollateral.value.toHuman() : undefined,
-                    raw_collateral_b: matchingCollateral ? matchingCollateral.value.toBn() : undefined,
-                    ...vault.value.toJSON()
+                    collateral: ma_human,
+                    collateral_currency: ma_ticker,
+                    nonce: collateralPosition.nonce, // Include the nonce in the joined data
+                    raw_collateral: rawBackingCollateral,
+                    ...matchingVault.toJSON()
                 }
-          };
-        }));
 
-        console.log(vaultWithCollateral);
-
-            // const collateral_currency = await currencyIdToMonetaryCurrency(interBtc.api,
-            //     my_vault_from_registry.id.currencies.collateral);
-            // const track_value = JSON.stringify(my_vault_from_registry.id.currencies.collateral.toJSON());
-
-
-        //     const rawBackingCollateral = await temp_api.query.vaultStaking.totalCurrentStake(nonce,
-        //         my_vault_from_registry.id);
-        //     const ma = newMonetaryAmount(decodeFixedPointType(rawBackingCollateral),
-        //         collateral_currency);
-        //     const ma_human = ma.toHuman();
-        //     const ma_ticker = ma.currency.ticker;
-        //     // print the amount
-        //
-        //     console.log(`${my_vault_from_registry.id.accountId.toString()}, Backing Collateral: ${ma_human} ${ma_ticker} Nonce ${nonce}`);
-        //
+            };
+            vaultsWithCollateral.push(JSON.stringify(finalVault));
+        }
 
         console.log(`Date: ${dateString}, Vault count: ${vaultEntries.length}`);
         // JSON Writing
@@ -266,69 +251,12 @@ async function main(): Promise<void> {
         // Construct the full file path
         const filePath = path.join(dirPath, `${relayChain}_snapshots${paraID}_${logYYYYMMDD}_23.json`);
 
-        // Transform the array of objects into an array of JSON strings
-        const vaultsWithCollateralAsJsonStrings: string[] = vaultWithCollateral.map(vault => JSON.stringify(vault));
 
         // Now, vaultsWithCollateralAsJsonStrings is an array of strings, where each string is a JSON representation of the corresponding object in vaultWithCollateral
-        fs.writeFileSync(filePath, vaultsWithCollateralAsJsonStrings.join("\n")); // one line per item
-        console.log("Data written to JSON successfully.");
+        fs.writeFileSync(filePath, vaultsWithCollateral.join("\n")); // one line per item
+        console.log(`Data written to ${filePath} successfully.`);
     }
 
     await interBtc.disconnect();
 }
-
-
-
-/*
-    // try out polkaholic API
-    const data = await fetchSnapshotData(2032, "20240101", 0, 23);
-    console.log(data);
-    const my_blockhash = data[0].end_blockhash;
-
-    await cryptoWaitReady();
-
-    console.log(`Connecting to parachain using ${args["parachain-endpoint"]} at ${my_blockhash}`);
-    const interBtc = await createInterBtcApi(args["parachain-endpoint"], undefined, my_blockhash);
-    //const interBtc2 = await interBtc.api.at(my_blockhash);
-
-    // get all vault collateral positions
-    const vault_list = await interBtc.vaults.list();
-    //const vault_list = (await interBtc2.query.vaults.list()) as VaultExt[];
-    console.table(vault_list);
-
-    //
-    const bannedVaults = vault_list.filter(vault => vault.bannedUntil);
-    bannedVaults.forEach(vault => {
-      console.log(`Vault Name: ${vault.id}, Banned Until: ${vault.bannedUntil}`);
-    });
-
-    // get the account ID corresponding to "wdBcednk8i9t7xYjkWM9rTtrix1V4oWBRkEhkF89xvS2tu5iY"
-    const accountId = interBtc.api.createType(
-        "AccountId",
-        "wdBcednk8i9t7xYjkWM9rTtrix1V4oWBRkEhkF89xvS2tu5iY"
-    );
-
-    const fa_1 = await interBtc.assetRegistry.getForeignAsset(3);
-    const api = interBtc.api;
-
-    const latestHeader = await api.rpc.chain.getHeader();
-
-    const fa_2 = await getForeignAssetFromId(api, 3);
-    console.log(fa_2);
-
-    // check currency metadata
-    const foreignAssets = await interBtc.assetRegistry.getForeignAssets();
-    // Constructing an object of ForeignAsset type with minimal attributes using type assertion
-    const vault_collateral = await interBtc.vaults.get(accountId, fa_1);
-    const flattenedData = foreignAssets.map(item => ({
-        id: item.foreignAsset.id,
-        coingeckoId: item.foreignAsset.coingeckoId,
-        name: item.name,
-        ticker: item.ticker,
-        decimals: item.decimals
-    }));
-
-    // get Loan Assets from the API
-    const loan_assets = await interBtc.loans.getLoanAssets();
-*/
 
