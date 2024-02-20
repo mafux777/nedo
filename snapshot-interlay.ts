@@ -1,6 +1,4 @@
 import { cryptoWaitReady } from "@polkadot/util-crypto";
-import { StorageKey, u32 } from '@polkadot/types';
-import {BareOpts, Inspect} from "@polkadot/types-codec/types/codec";
 import { decodeAddress } from "@polkadot/keyring";
 import {
     createInterBtcApi,
@@ -10,16 +8,11 @@ import {
     newMonetaryAmount,
     UndercollateralizedPosition,
     VaultRegistryVault,
-    InterbtcPrimitivesVaultId
 } from "@interlay/interbtc-api";
 import { Option } from "@polkadot/types-codec"
 import { u8aToHex } from '@polkadot/util';
 import fetch from "node-fetch";
 import {ApiPromise} from "@polkadot/api";
-import type {IU8a} from "@polkadot/types-codec/types/interfaces";
-import type {Registry} from "@polkadot/types-codec/types/registry";
-import type {HexString} from "@polkadot/util/types";
-import type {AnyJson, AnyTuple} from "@polkadot/types-codec/types/helpers";
 
 const fs = require('fs');
 const Table = require("cli-table3");
@@ -172,11 +165,11 @@ async function fetchAndProcess(): Promise<void> {
     });
 
     // Loop through all relevant dates
+    const paraID = 2032;
     for (let d = startDate; d <= endDate; d.setDate(d.getDate() + 1)) {
         const dateString = d.toISOString().split("T")[0].replace(/-/g, "");
-        const data = await fetchSnapshotData(2032, dateString, 0, 23);
+        const data = await fetchSnapshotData(paraID, dateString, 0, 23);
         console.log(`[${d}] data`, data)
-        const last_hour = 23;
         for (const data_hr of data) {
             let target_indexTS = data_hr.indexTS
             let target_hr = data_hr.hr
@@ -187,7 +180,7 @@ async function fetchAndProcess(): Promise<void> {
                 console.log(`[${d.toISOString()} targetHR=${targetHR}] SKIP!!`)
                 continue
             }
-            const my_blockhash = data_hr.end_blockhash; // last hour of the day
+            const my_blockhash = data_hr.end_blockhash; // last hash of the hour in question
             if (!my_blockhash) {
                 console.log(`We have reached the end of the road...`);
                 break;
@@ -233,7 +226,6 @@ async function fetchAndProcess(): Promise<void> {
                 });        // Transform entries to extract keys and nonce for entriesB
             const CollateralWithNonce = (entries: [any, any][]) =>
                 entries.map(([key, value]) => {
-                    // Assuming the first part of the key is the accountId, and the second part is the nonce
                     const [nonce, accountId] = key.args.map((k: JSONableCodec) => k.toJSON());
                     return {key: accountId, nonce, value};
                 });
@@ -290,8 +282,7 @@ async function fetchAndProcess(): Promise<void> {
             // JSON Writing
             const relayChain = "polkadot";
             const paraName = "interlay";
-            const paraID = 2032;
-            const logYYYYMMDD = `${dateString}`;
+            //const logYYYYMMDD = `${dateString}`;
 
             const year = d.getFullYear();
             const month = String(d.getMonth() + 1).padStart(2, "0"); // JavaScript months are 0-indexed.
@@ -304,7 +295,7 @@ async function fetchAndProcess(): Promise<void> {
             fs.mkdirSync(dirPath, {recursive: true});
 
             // Construct the full file path
-            const filePath = path.join(dirPath, `${relayChain}_snapshots_${paraID}_${logYYYYMMDD}_${targetHR}.json`);
+            const filePath = path.join(dirPath, `${relayChain}_snapshots_${paraID}_${dateString}_${targetHR}.json`);
 
             fs.writeFileSync(filePath, vaultsWithCollateral.join("\n")); // one line per item
             console.log(`Data written to ${filePath} JSON successfully`);
