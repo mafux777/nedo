@@ -278,6 +278,8 @@ async function fetchAndProcess(): Promise<void> {
                     let portfolio = {
                         chain_name: chain_name,
                         block_hash: my_blockhash,
+                        address_ss58: p[1].activeLoan?.borrower,
+                        address_pubkey: paraTool.getPubKey(p[1].activeLoan?.borrower),
                         block_number: my_blockno,
                         ts: ts,
                         section: section,
@@ -288,6 +290,11 @@ async function fetchAndProcess(): Promise<void> {
                         kv: p[0],
                         pv: {
                             nav: r.nav,
+                            trancheTokenValues: (r.trancheTokenPrices as any[]).filter(
+                                value => typeof value === 'string' && value !== "0") // Check for non-zero strings
+                              .map((hex:string) => BigInt(hex).toString(10)) // Convert to decimal string
+                              .map(Number)
+                              .map((f:number) => f/1e18),
                             ...p[1]
                         }
                     };
