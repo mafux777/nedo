@@ -77,7 +77,7 @@ type Snapshot = {
 };
 
 async function fetchSnapshotData(chainId: number, logDT: string, startHR: number, finalHR: number): Promise<Snapshot[]> {
-    const response = await fetch(`https://api.polkaholic.io/snapshot/${chainId}?logDT=${logDT}&startHR=${startHR}&finalHR=${finalHR}`);
+    const response = await fetch(`https://api-polka.colorfulnotion.com/snapshot/${chainId}?logDT=${logDT}&startHR=${startHR}&finalHR=${finalHR}`);
     if (!response.ok) {
         throw new Error("Failed to fetch data");
     }
